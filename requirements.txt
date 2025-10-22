@@ -8,3 +8,4 @@ requests==2.31.0
 # Pin NumPy to 1.x to avoid np.float_ removal issues with older wandb
 numpy==1.26.4
 pandas
+python-dotenv==1.0.1

@@ -8,6 +8,63 @@ from typing import Dict, Any, Optional, Tuple
 
 MODEL_NAME = "iris-logreg-model"
 
+
+def _normalize_entity_project(wandb_entity: Optional[str], wandb_project: Optional[str]) -> Tuple[Optional[str], str]:
+    """
+    Normalize W&B entity/project inputs and try to correct common misconfigurations.
+
+    Handles cases where WANDB_PROJECT is mistakenly set to "entity/project" or includes extra slashes.
+    """
+    entity = (wandb_entity or "").strip("/") or None
+    project = (wandb_project or "").strip("/")
+
+    # If project accidentally contains a slash, try to split it
+    if "/" in project:
+        parts = [p for p in project.split("/") if p]
+        if len(parts) == 2 and entity is None:
+            # Project provided as "entity/project" and no entity env set
+            entity, project = parts[0], parts[1]
+        elif len(parts) >= 2 and entity:
+            # Project mistakenly includes entity again (e.g., entity/project)
+            if parts[0] == entity:
+                project = parts[1]
+            else:
+                # Fall back to last segment as project name
+                project = parts[-1]
+        else:
+            # Best-effort: take the last segment as the project
+            project = parts[-1]
+
+    if not project:
+        raise ValueError("WANDB_PROJECT is required and cannot be empty")
+
+    return entity, project
+
+
+def _build_artifact_ref(
+    wandb_entity: Optional[str],
+    wandb_project: Optional[str],
+    model_name: str,
+    alias: str = "latest",
+) -> str:
+    """
+    Build a valid W&B artifact reference in the form:
+    [entity/]<project>/<artifact_name>:<alias>
+
+    Also supports override via WANDB_ARTIFACT env var to use a full path directly.
+    """
+    # Highest priority: explicit override of full artifact ref
+    override = os.getenv("WANDB_ARTIFACT") or os.getenv("MODEL_ARTIFACT")
+    if override:
+        return override.strip()
+
+    entity, project = _normalize_entity_project(wandb_entity, wandb_project)
+
+    if entity:
+        return f"{entity}/{project}/{model_name}:{alias}"
+    # No entity: use user default account context
+    return f"{project}/{model_name}:{alias}"
+
 def download_latest_model(wandb_entity: str, wandb_project: str, dest_dir: str = "/tmp/model") -> Tuple[str, Dict[str, Any]]:
     """
     Downloads the latest model artifact from W&B and returns local path to model file and metadata.
@@ -17,23 +74,29 @@ def download_latest_model(wandb_entity: str, wandb_project: str, dest_dir: str =
     """
     os.makedirs(dest_dir, exist_ok=True)
     api = wandb.Api()
-    
-    # Format: {entity}/{project}/{artifact_name}:alias
-    if wandb_entity:
-        artifact_ref = f"{wandb_entity}/{wandb_project}/{MODEL_NAME}:latest"
-    else:
-        # If no entity, Api still can reference project within default
-        artifact_ref = f"{wandb_project}/{MODEL_NAME}:latest"
-    
+
+    # Build a robust artifact reference
+    artifact_ref = _build_artifact_ref(wandb_entity, wandb_project, MODEL_NAME, alias="latest")
+
     try:
         artifact = api.artifact(artifact_ref)
     except Exception as e:
-        raise RuntimeError(f"Could not fetch artifact {artifact_ref}: {e}")
+        raise RuntimeError(
+            f"Could not fetch artifact {artifact_ref}: {e}. "
+            "Check WANDB_ENTITY/WANDB_PROJECT values, or set WANDB_ARTIFACT to a full path like 'entity/project/artifact:alias'."
+        )
     
     local_path = artifact.download(root=dest_dir)
     
     # Extract metadata from artifact
     metadata = artifact.metadata or {}
+    # Add useful context
+    metadata = {
+        **metadata,
+        "artifact_ref": artifact_ref,
+        "artifact_name": getattr(artifact, "name", MODEL_NAME),
+        "artifact_version": getattr(artifact, "version", None),
+    }
     
     # Find model file
     model_file = None
@@ -73,16 +136,14 @@ def get_model_info(wandb_entity: str, wandb_project: str) -> Dict[str, Any]:
     """
     try:
         api = wandb.Api()
-        if wandb_entity:
-            artifact_ref = f"{wandb_entity}/{wandb_project}/{MODEL_NAME}:latest"
-        else:
-            artifact_ref = f"{wandb_project}/{MODEL_NAME}:latest"
+        artifact_ref = _build_artifact_ref(wandb_entity, wandb_project, MODEL_NAME, alias="latest")
         
         artifact = api.artifact(artifact_ref)
         metadata = artifact.metadata or {}
         
         # Add artifact info
         info = {
+            "artifact_ref": artifact_ref,
             "artifact_name": artifact.name,
             "artifact_version": artifact.version,
             "artifact_type": artifact.type,

@@ -6,6 +6,13 @@ import numpy as np
 from typing import Dict, Any, Optional
 from .model_manager import load_model_from_wandb, get_model_info, validate_model_performance
 
+# Load environment variables from a .env file if present (dev-friendly)
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass
+
 app = FastAPI(title="Iris inference service", version="2.0.0")
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,8 +42,8 @@ class ModelInfo(BaseModel):
 @app.on_event("startup")
 def startup_load_model():
     global model, model_metadata
-    wandb_project = os.getenv("WANDB_PROJECT", "mlops-capstone")
-    wandb_entity = os.getenv("WANDB_ENTITY", None)
+    wandb_project = os.getenv("WANDB_PROJECT", "MLOPSPROJECT2")
+    wandb_entity = os.getenv("WANDB_ENTITY", "raja-ramiz-mukhtar6-szabist")
     try:
         model, model_metadata = load_model_from_wandb(wandb_entity, wandb_project)
         app.state.model_ready = True

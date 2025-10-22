@@ -21,8 +21,8 @@ COPY . /app
 
 EXPOSE 8000
 
-# W&B environment (override in runtime)
-ENV WANDB_PROJECT="mlops-capstone"
+# W&B environment (set at runtime or via .env if mounted)
+# ENV WANDB_PROJECT="MLOPSPROJECT2"
 # ENV WANDB_ENTITY="your-wandb-entity"
 # ENV WANDB_API_KEY="your-wandb-api-key"
 
