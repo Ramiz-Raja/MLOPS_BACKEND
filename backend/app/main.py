@@ -8,6 +8,16 @@ from .model_manager import load_model_from_wandb, get_model_info, validate_model
 
 app = FastAPI(title="Iris inference service", version="2.0.0")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or your exact Streamlit URL for security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 class PredictRequest(BaseModel):
     # expects list of 4 floats (sepal/petal measurements)
     features: list
